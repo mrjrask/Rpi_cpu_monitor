@@ -29,6 +29,8 @@ logging.basicConfig(
 CLEAR_SCREEN = "\033[2J\033[H"
 CURSOR_HOME = "\033[H"
 CLEAR_LINE = "\033[K"
+TERMINAL_COLS = 60
+STORAGE_PREFIX = "💾  Storage: "
 
 _needs_full_refresh = False
 
@@ -44,12 +46,25 @@ def clear_terminal():
     print(CLEAR_SCREEN, end="", flush=True)
 
 
-def resize_terminal(cols=60, rows=13):
+def resize_terminal(cols=TERMINAL_COLS, rows=13):
     """Request terminal resize via ANSI escape sequence when stdout is a TTY."""
     if not os.isatty(1):
         return
     # CSI 8 ; <rows> ; <cols> t  -> Resize terminal window in supporting emulators.
     print(f"\033[8;{rows};{cols}t", end="", flush=True)
+
+
+
+
+def clamp_line_width(text, max_cols):
+    """Clamp text to a fixed column width, appending an ellipsis when truncated."""
+    if max_cols <= 0:
+        return ""
+    if len(text) <= max_cols:
+        return text
+    if max_cols == 1:
+        return "…"
+    return text[:max_cols - 1] + "…"
 
 
 def get_cpu_temp():
@@ -406,7 +421,7 @@ def main():
 
     hostname = socket.gethostname()
 
-    resize_terminal(cols=60, rows=14)
+    resize_terminal(cols=TERMINAL_COLS, rows=14)
     clear_terminal()
     signal.signal(signal.SIGWINCH, _handle_resize)
 
@@ -509,7 +524,9 @@ def main():
             print(f"🌀  Fan Speed: {fan_rpm if fan_rpm is not None else 'N/A'}{CLEAR_LINE}")
             print(f"⚙️  CPU Usage: {color_for_cpu(cpu_usage)}{cpu_usage:5.1f}%{RESET}{CLEAR_LINE}")
             print(f"🧠  Memory: {format_bytes(mem_used)} / {format_bytes(mem_total)} ({mem_pct:5.1f}%){CLEAR_LINE}")
-            print(f"💾  Storage: {storage_line}{CLEAR_LINE}")
+            max_storage_chars = TERMINAL_COLS - len(STORAGE_PREFIX)
+            storage_line = clamp_line_width(storage_line, max_storage_chars)
+            print(f"{STORAGE_PREFIX}{storage_line}{CLEAR_LINE}")
             print(f"🌐  Network: ↑ {format_network_bits(tx_rate)}{CLEAR_LINE}")
             print(f"             ↓ {format_network_bits(rx_rate)}{CLEAR_LINE}")
             print(
