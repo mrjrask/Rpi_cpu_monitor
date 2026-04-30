@@ -30,7 +30,7 @@ logging.basicConfig(
 CLEAR_SCREEN = "\033[2J\033[H"
 CURSOR_HOME = "\033[H"
 CLEAR_LINE = "\033[K"
-TERMINAL_COLS = 60
+TERMINAL_COLS = 80
 STORAGE_PREFIX = "💾  Storage: "
 
 _needs_full_refresh = False
@@ -53,6 +53,13 @@ def resize_terminal(cols=TERMINAL_COLS, rows=13):
         return
     # CSI 8 ; <rows> ; <cols> t  -> Resize terminal window in supporting emulators.
     print(f"\033[8;{rows};{cols}t", end="", flush=True)
+
+
+def calculate_required_rows(storage_line_count):
+    """Calculate terminal rows required for the current rendered output."""
+    base_rows = 13
+    extra_storage_rows = max(storage_line_count - 1, 0)
+    return base_rows + extra_storage_rows
 
 
 
@@ -448,7 +455,7 @@ def main():
 
     hostname = socket.gethostname()
 
-    resize_terminal(cols=TERMINAL_COLS, rows=14)
+    last_resize_rows = None
     clear_terminal()
     signal.signal(signal.SIGWINCH, _handle_resize)
 
@@ -507,6 +514,11 @@ def main():
                     f"/ | rootfs | {format_bytes(stor_total)} | "
                     f"{format_bytes(stor_total - stor_used)} free ({stor_pct:5.1f}% used)"
                 ]
+
+            required_rows = calculate_required_rows(len(storage_lines))
+            if required_rows != last_resize_rows:
+                resize_terminal(cols=TERMINAL_COLS, rows=required_rows)
+                last_resize_rows = required_rows
 
             rx, tx = read_network_bytes()
             elapsed = now - prev_time
