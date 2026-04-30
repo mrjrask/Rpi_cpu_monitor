@@ -491,23 +491,22 @@ def main():
 
             stor_details = read_mounted_storage_details()
             if stor_details:
-                stor_parts = []
+                storage_lines = []
                 for item in stor_details:
                     total = item["total"]
                     free = item["free"]
                     used_pct = ((total - free) / total * 100) if total else 0
-                    stor_parts.append(
-                        f"{item['disk_name']}:{item['mountpoint']} "
-                        f"{format_bytes(free)} free/{format_bytes(total)} ({used_pct:4.1f}% used)"
+                    storage_lines.append(
+                        f"{item['mountpoint']} | {item['disk_name']} | "
+                        f"{format_bytes(total)} | {format_bytes(free)} free ({used_pct:4.1f}% used)"
                     )
-                storage_line = " | ".join(stor_parts)
             else:
                 stor_total, stor_used = read_storage_usage("/")
                 stor_pct = stor_used / stor_total * 100
-                storage_line = (
-                    f"/ {format_bytes(stor_used)} used/{format_bytes(stor_total)} "
-                    f"({stor_pct:5.1f}%)"
-                )
+                storage_lines = [
+                    f"/ | rootfs | {format_bytes(stor_total)} | "
+                    f"{format_bytes(stor_total - stor_used)} free ({stor_pct:5.1f}% used)"
+                ]
 
             rx, tx = read_network_bytes()
             elapsed = now - prev_time
@@ -551,9 +550,13 @@ def main():
             print(f"🌀  Fan Speed: {fan_rpm if fan_rpm is not None else 'N/A'}{CLEAR_LINE}")
             print(f"⚙️  CPU Usage: {color_for_cpu(cpu_usage)}{cpu_usage:5.1f}%{RESET}{CLEAR_LINE}")
             print(f"🧠  Memory: {format_bytes(mem_used)} / {format_bytes(mem_total)} ({mem_pct:5.1f}%){CLEAR_LINE}")
-            max_storage_chars = TERMINAL_COLS - display_width(STORAGE_PREFIX)
-            storage_line = clamp_line_width(storage_line, max_storage_chars)
-            print(f"{STORAGE_PREFIX}{storage_line}{CLEAR_LINE}")
+            max_storage_chars = max(TERMINAL_COLS - display_width(STORAGE_PREFIX), 0)
+            first_storage = clamp_line_width(storage_lines[0], max_storage_chars)
+            print(f"{STORAGE_PREFIX}{first_storage}{CLEAR_LINE}")
+            storage_indent = " " * display_width(STORAGE_PREFIX)
+            for extra_line in storage_lines[1:]:
+                clamped_line = clamp_line_width(extra_line, max_storage_chars)
+                print(f"{storage_indent}{clamped_line}{CLEAR_LINE}")
             print(f"🌐  Network: ↑ {format_network_bits(tx_rate)}{CLEAR_LINE}")
             print(f"             ↓ {format_network_bits(rx_rate)}{CLEAR_LINE}")
             print(
