@@ -9,6 +9,7 @@ import shutil
 import socket
 import re
 import json
+import unicodedata
 from glob import glob
 
 # ANSI color codes
@@ -56,15 +57,41 @@ def resize_terminal(cols=TERMINAL_COLS, rows=13):
 
 
 
+def display_width(text):
+    """Return rendered terminal cell width for a string."""
+    width = 0
+    for ch in text:
+        if unicodedata.combining(ch):
+            continue
+        width += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+    return width
+
+
 def clamp_line_width(text, max_cols):
-    """Clamp text to a fixed column width, appending an ellipsis when truncated."""
+    """Clamp text to a fixed terminal cell width, appending an ellipsis when truncated."""
     if max_cols <= 0:
         return ""
-    if len(text) <= max_cols:
+
+    if display_width(text) <= max_cols:
         return text
+
     if max_cols == 1:
         return "…"
-    return text[:max_cols - 1] + "…"
+
+    target_width = max_cols - 1
+    out = []
+    used = 0
+    for ch in text:
+        if unicodedata.combining(ch):
+            out.append(ch)
+            continue
+        ch_width = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if used + ch_width > target_width:
+            break
+        out.append(ch)
+        used += ch_width
+
+    return "".join(out) + "…"
 
 
 def get_cpu_temp():
@@ -524,7 +551,7 @@ def main():
             print(f"🌀  Fan Speed: {fan_rpm if fan_rpm is not None else 'N/A'}{CLEAR_LINE}")
             print(f"⚙️  CPU Usage: {color_for_cpu(cpu_usage)}{cpu_usage:5.1f}%{RESET}{CLEAR_LINE}")
             print(f"🧠  Memory: {format_bytes(mem_used)} / {format_bytes(mem_total)} ({mem_pct:5.1f}%){CLEAR_LINE}")
-            max_storage_chars = TERMINAL_COLS - len(STORAGE_PREFIX)
+            max_storage_chars = TERMINAL_COLS - display_width(STORAGE_PREFIX)
             storage_line = clamp_line_width(storage_line, max_storage_chars)
             print(f"{STORAGE_PREFIX}{storage_line}{CLEAR_LINE}")
             print(f"🌐  Network: ↑ {format_network_bits(tx_rate)}{CLEAR_LINE}")
