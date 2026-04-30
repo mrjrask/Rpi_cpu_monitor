@@ -8,6 +8,7 @@ import time
 import shutil
 import socket
 import re
+import json
 from glob import glob
 
 # ANSI color codes
@@ -126,6 +127,71 @@ def read_storage_usage(path="/"):
     """Return total and used storage in bytes for the given path."""
     usage = shutil.disk_usage(path)
     return usage.total, max(usage.total - usage.free, 0)
+
+
+def read_mounted_storage_details():
+    """Return per-mount storage usage, excluding loop/zram devices."""
+    try:
+        result = subprocess.run(
+            ["lsblk", "-J", "-b", "-o", "NAME,TYPE,SIZE,MOUNTPOINTS,PKNAME"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=3,
+        )
+    except Exception:
+        return []
+    if result.returncode != 0:
+        return []
+
+    try:
+        devices = json.loads(result.stdout).get("blockdevices", [])
+    except Exception:
+        return []
+
+    disk_sizes = {}
+    details = []
+    stack = list(devices)
+    while stack:
+        dev = stack.pop()
+        stack.extend(dev.get("children") or [])
+
+        name = dev.get("name")
+        dev_type = dev.get("type")
+        if not name:
+            continue
+        if name.startswith("loop") or name.startswith("zram"):
+            continue
+
+        try:
+            size = int(dev.get("size", 0) or 0)
+        except (TypeError, ValueError):
+            size = 0
+        if dev_type == "disk":
+            disk_sizes[name] = size
+
+        mountpoints = [mp for mp in (dev.get("mountpoints") or []) if mp]
+        if not mountpoints:
+            continue
+
+        disk_name = dev.get("pkname") if dev_type in {"part", "lvm", "crypt"} else name
+        disk_name = disk_name or name
+
+        for mountpoint in mountpoints:
+            try:
+                usage = shutil.disk_usage(mountpoint)
+            except OSError:
+                continue
+            details.append(
+                {
+                    "disk_name": disk_name,
+                    "mountpoint": mountpoint,
+                    "total": usage.total,
+                    "free": usage.free,
+                }
+            )
+
+    return sorted(details, key=lambda item: (item["disk_name"], item["mountpoint"]))
 
 
 def color_for_cpu(usage):
@@ -381,8 +447,25 @@ def main():
             mem_total, mem_used = read_memory_usage()
             mem_pct = mem_used / mem_total * 100
 
-            stor_total, stor_used = read_storage_usage("/")
-            stor_pct = stor_used / stor_total * 100
+            stor_details = read_mounted_storage_details()
+            if stor_details:
+                stor_parts = []
+                for item in stor_details:
+                    total = item["total"]
+                    free = item["free"]
+                    used_pct = ((total - free) / total * 100) if total else 0
+                    stor_parts.append(
+                        f"{item['disk_name']}:{item['mountpoint']} "
+                        f"{format_bytes(free)} free/{format_bytes(total)} ({used_pct:4.1f}% used)"
+                    )
+                storage_line = " | ".join(stor_parts)
+            else:
+                stor_total, stor_used = read_storage_usage("/")
+                stor_pct = stor_used / stor_total * 100
+                storage_line = (
+                    f"/ {format_bytes(stor_used)} used/{format_bytes(stor_total)} "
+                    f"({stor_pct:5.1f}%)"
+                )
 
             rx, tx = read_network_bytes()
             elapsed = now - prev_time
@@ -426,7 +509,7 @@ def main():
             print(f"🌀  Fan Speed: {fan_rpm if fan_rpm is not None else 'N/A'}{CLEAR_LINE}")
             print(f"⚙️  CPU Usage: {color_for_cpu(cpu_usage)}{cpu_usage:5.1f}%{RESET}{CLEAR_LINE}")
             print(f"🧠  Memory: {format_bytes(mem_used)} / {format_bytes(mem_total)} ({mem_pct:5.1f}%){CLEAR_LINE}")
-            print(f"💾  Storage: {format_bytes(stor_used)} / {format_bytes(stor_total)} ({stor_pct:5.1f}%){CLEAR_LINE}")
+            print(f"💾  Storage: {storage_line}{CLEAR_LINE}")
             print(f"🌐  Network: ↑ {format_network_bits(tx_rate)}{CLEAR_LINE}")
             print(f"             ↓ {format_network_bits(rx_rate)}{CLEAR_LINE}")
             print(
