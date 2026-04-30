@@ -151,7 +151,11 @@ def read_mounted_storage_details():
 
     disk_sizes = {}
     details = []
-    for dev in devices:
+    stack = list(devices)
+    while stack:
+        dev = stack.pop()
+        stack.extend(dev.get("children") or [])
+
         name = dev.get("name")
         dev_type = dev.get("type")
         if not name:
@@ -159,7 +163,10 @@ def read_mounted_storage_details():
         if name.startswith("loop") or name.startswith("zram"):
             continue
 
-        size = int(dev.get("size", 0) or 0)
+        try:
+            size = int(dev.get("size", 0) or 0)
+        except (TypeError, ValueError):
+            size = 0
         if dev_type == "disk":
             disk_sizes[name] = size
 
@@ -167,7 +174,7 @@ def read_mounted_storage_details():
         if not mountpoints:
             continue
 
-        disk_name = dev.get("pkname") if dev_type == "part" else name
+        disk_name = dev.get("pkname") if dev_type in {"part", "lvm", "crypt"} else name
         disk_name = disk_name or name
 
         for mountpoint in mountpoints:
