@@ -988,13 +988,14 @@ def get_active_interface(route_target="1.1.1.1"):
     system = platform.system()
     if system == "Windows":
         try:
+            escaped_target = route_target.replace("'", "''")
             result = subprocess.run(
                 [
                     "powershell",
                     "-NoProfile",
                     "-Command",
                     (
-                        f"$target = '{route_target.replace("'", "''")}'; "
+                        f"$target = '{escaped_target}'; "
                         "$ip = [System.Net.Dns]::GetHostAddresses($target) | "
                         "Where-Object { $_.AddressFamily -in 'InterNetwork','InterNetworkV6' } | "
                         "Select-Object -First 1; "
